@@ -889,26 +889,25 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.95);
   backdrop-filter: blur(8px);
   z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: 0;
 }
 
 .advanced-settings-modal {
   background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-  border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  width: 95%;
-  max-width: 1400px;
-  height: 90vh;
+  border-radius: 0;
+  border: none;
+  width: 100vw;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
+  box-shadow: none;
 }
 
 .modal-header {
@@ -1055,8 +1054,9 @@ body {
 
 .tab-content {
   flex: 1;
-  padding: 32px;
+  padding: 16px 32px 32px 32px;
   overflow: auto;
+  height: calc(100vh - 200px);
 }
 
 /* Data Table Styles */
@@ -1111,7 +1111,7 @@ body {
 
 .data-table {
   overflow: auto;
-  max-height: 500px;
+  max-height: calc(100vh - 400px);
 }
 
 .data-table table {
@@ -1131,7 +1131,7 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 10;
 }
 
 .data-table td {

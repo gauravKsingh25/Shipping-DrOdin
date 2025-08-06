@@ -22,7 +22,7 @@ export default function AdvancedSettings({
     { id: 'providers', label: 'Providers', icon: '🚚' },
     { id: 'states', label: 'State Charges', icon: '🗺️' },
     { id: 'fixed', label: 'Fixed Charges', icon: '💰' },
-    { id: 'upload', label: 'Upload Data', icon: '📤' }
+    { id: 'upload', label: 'Upload Data', icon: '📁' },
   ];
 
   // Data validation schemas
@@ -447,7 +447,7 @@ export default function AdvancedSettings({
     }
 
     const headers = Object.keys(data[0]);
-    const displayData = data.slice(0, 10);
+    const displayData = data; // Show all data instead of limiting to 10
 
     return (
       <div className="data-table-container">
@@ -485,11 +485,6 @@ export default function AdvancedSettings({
               ))}
             </tbody>
           </table>
-          {data.length > 10 && (
-            <div className="table-footer">
-              <p>Showing 10 of {data.length} records</p>
-            </div>
-          )}
         </div>
       </div>
     );
