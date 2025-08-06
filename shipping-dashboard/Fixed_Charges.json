@@ -4,69 +4,99 @@
     "Docket Charge (INR)": 48,
     "COD Charge (INR)": 49,
     "Holiday Charge (INR)": 24,
-    "Outstation Charge (INR)": 47
+    "Outstation Charge (INR)": 47,
+    "Insurance Charge (%)": 2.5,
+    "NGT Green Tax (INR)": 5,
+    "Kerala North East Handling Charge (INR)": 15
   },
   {
     "Provider ID": 2,
     "Docket Charge (INR)": 38,
     "COD Charge (INR)": 45,
     "Holiday Charge (INR)": 24,
-    "Outstation Charge (INR)": 45
+    "Outstation Charge (INR)": 45,
+    "Insurance Charge (%)": 2.0,
+    "NGT Green Tax (INR)": 5,
+    "Kerala North East Handling Charge (INR)": 15
   },
   {
     "Provider ID": 3,
     "Docket Charge (INR)": 50,
     "COD Charge (INR)": 100,
     "Holiday Charge (INR)": 150,
-    "Outstation Charge (INR)": 0
+    "Outstation Charge (INR)": 0,
+    "Insurance Charge (%)": 3.0,
+    "NGT Green Tax (INR)": 5,
+    "Kerala North East Handling Charge (INR)": 15
   },
   {
     "Provider ID": 4,
     "Docket Charge (INR)": 26,
     "COD Charge (INR)": 43,
     "Holiday Charge (INR)": 27,
-    "Outstation Charge (INR)": 49
+    "Outstation Charge (INR)": 49,
+    "Insurance Charge (%)": 2.2,
+    "NGT Green Tax (INR)": 5,
+    "Kerala North East Handling Charge (INR)": 15
   },
   {
     "Provider ID": 5,
     "Docket Charge (INR)": 43,
     "COD Charge (INR)": 44,
     "Holiday Charge (INR)": 22,
-    "Outstation Charge (INR)": 31
+    "Outstation Charge (INR)": 31,
+    "Insurance Charge (%)": 2.8,
+    "NGT Green Tax (INR)": 5,
+    "Kerala North East Handling Charge (INR)": 15
   },
   {
     "Provider ID": 6,
     "Docket Charge (INR)": 49,
     "COD Charge (INR)": 59,
     "Holiday Charge (INR)": 15,
-    "Outstation Charge (INR)": 40
+    "Outstation Charge (INR)": 40,
+    "Insurance Charge (%)": 2.1,
+    "NGT Green Tax (INR)": 5,
+    "Kerala North East Handling Charge (INR)": 15
   },
   {
     "Provider ID": 7,
     "Docket Charge (INR)": 33,
     "COD Charge (INR)": 51,
     "Holiday Charge (INR)": 30,
-    "Outstation Charge (INR)": 30
+    "Outstation Charge (INR)": 30,
+    "Insurance Charge (%)": 2.4,
+    "NGT Green Tax (INR)": 5,
+    "Kerala North East Handling Charge (INR)": 15
   },
   {
     "Provider ID": 8,
     "Docket Charge (INR)": 35,
     "COD Charge (INR)": 53,
     "Holiday Charge (INR)": 29,
-    "Outstation Charge (INR)": 46
+    "Outstation Charge (INR)": 46,
+    "Insurance Charge (%)": 2.6,
+    "NGT Green Tax (INR)": 5,
+    "Kerala North East Handling Charge (INR)": 15
   },
   {
     "Provider ID": 9,
     "Docket Charge (INR)": 49,
     "COD Charge (INR)": 49,
     "Holiday Charge (INR)": 21,
-    "Outstation Charge (INR)": 49
+    "Outstation Charge (INR)": 49,
+    "Insurance Charge (%)": 2.3,
+    "NGT Green Tax (INR)": 5,
+    "Kerala North East Handling Charge (INR)": 15
   },
   {
     "Provider ID": 10,
     "Docket Charge (INR)": 48,
     "COD Charge (INR)": 44,
     "Holiday Charge (INR)": 28,
-    "Outstation Charge (INR)": 44
+    "Outstation Charge (INR)": 44,
+    "Insurance Charge (%)": 2.7,
+    "NGT Green Tax (INR)": 5,
+    "Kerala North East Handling Charge (INR)": 15
   }
 ]

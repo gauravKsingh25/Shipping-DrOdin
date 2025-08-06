@@ -1,15 +1,16 @@
 import React, { useEffect, useState, useCallback } from "react";
 import BoxDialog from "./BoxDialog";
 import ExportDialog from "./ExportDialog";
+import AdvancedSettings from "./AdvancedSettings";
 
 export default function Dashboard() {
   const [providers, setProviders] = useState([]);
   const [states, setStates] = useState([]);
+  const [statewiseCharges, setStatewiseCharges] = useState([]);
   const [fixedCharges, setFixedCharges] = useState([]);
   const [selectedState, setSelectedState] = useState("");
   const [results, setResults] = useState([]);
   const [expandedIdx, setExpandedIdx] = useState(null);
-  const [showResults, setShowResults] = useState(false);
   const [selectedProviderIdx, setSelectedProviderIdx] = useState(null);
   const [vendorName, setVendorName] = useState("");
   const [savedSelections, setSavedSelections] = useState([]);
@@ -22,11 +23,18 @@ export default function Dashboard() {
   const [selectedVendor, setSelectedVendor] = useState("");
   const [loading, setLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
+  
+  // Add advanced settings state
+  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
 
   // Add missing state for checkboxes
   const [cod, setCOD] = useState(false);
   const [holiday, setHoliday] = useState(false);
   const [outstation, setOutstation] = useState(false);
+
+  // Add new states for shipment value and insurance
+  const [shipmentValue, setShipmentValue] = useState("");
+  const [insurancePercentage, setInsurancePercentage] = useState("");
 
   // API base URL - fix the production URL to match backend CORS
   const API_BASE_URL = process.env.NODE_ENV === 'production' 
@@ -45,55 +53,76 @@ export default function Dashboard() {
       }
     } catch (error) {
       console.error('Error loading saved selections:', error);
-      // Set empty array as fallback
       setSavedSelections([]);
     }
   }, [API_BASE_URL]);
 
   useEffect(() => {
-    // Load JSON data with better error handling
-    const loadStaticData = async () => {
+    // Load data from API
+    const fetchData = async () => {
+      setLoading(true);
       try {
-        const responses = await Promise.all([
-          fetch("/Providers.json"),
-          fetch("/Statewise_Charges.json"),
-          fetch("/Fixed_Charges.json")
-        ]);
-
-        // Check if all responses are ok
-        for (let i = 0; i < responses.length; i++) {
-          if (!responses[i].ok) {
-            throw new Error(`Failed to load file ${i + 1}: ${responses[i].status}`);
-          }
+        // Fetch providers
+        const providersResponse = await fetch(`${API_BASE_URL}/api/providers`);
+        if (providersResponse.ok) {
+          const providersData = await providersResponse.json();
+          // Transform MongoDB data to match expected format
+          const transformedProviders = providersData.map(p => ({
+            "Provider ID": p.providerId,
+            "Provider Name": p.providerName,
+            description: p.description,
+            isActive: p.isActive
+          }));
+          setProviders(transformedProviders);
         }
 
-        const [providersData, statesData, fixedChargesData] = await Promise.all(
-          responses.map(response => response.json())
-        );
-
-        // Validate data arrays
-        if (!Array.isArray(providersData) || !Array.isArray(statesData) || !Array.isArray(fixedChargesData)) {
-          throw new Error('Invalid data format in JSON files');
+        // Fetch fixed charges
+        const fixedChargesResponse = await fetch(`${API_BASE_URL}/api/charges/fixed`);
+        if (fixedChargesResponse.ok) {
+          const fixedChargesData = await fixedChargesResponse.json();
+          // Transform MongoDB data to match expected format
+          const transformedFixedCharges = fixedChargesData.map(f => ({
+            "Provider ID": f.providerId,
+            "Docket Charge (INR)": f.docketCharge,
+            "COD Charge (INR)": f.codCharge,
+            "Holiday Charge (INR)": f.holidayCharge,
+            "Outstation Charge (INR)": f.outstationCharge,
+            "Insurance Charge (%)": f.insuranceChargePercent,
+            "NGT Green Tax (INR)": f.ngtGreenTax,
+            "Kerala North East Handling Charge (INR)": f.keralaHandlingCharge
+          }));
+          setFixedCharges(transformedFixedCharges);
         }
 
-        setProviders(providersData);
-        setStates(statesData);
-        setFixedCharges(fixedChargesData);
-        
-        console.log('Static data loaded successfully:', {
-          providers: providersData.length,
-          states: statesData.length,
-          fixedCharges: fixedChargesData.length
-        });
+        // Fetch statewise charges
+        const statewiseChargesResponse = await fetch(`${API_BASE_URL}/api/charges/statewise`);
+        if (statewiseChargesResponse.ok) {
+          const statewiseChargesData = await statewiseChargesResponse.json();
+          // Transform MongoDB data to match expected format
+          const transformedStatewiseCharges = statewiseChargesData.map(s => ({
+            "Provider ID": s.providerId,
+            "Provider Name": s.providerName,
+            "State": s.state,
+            "Per Kilo Fee (INR)": s.perKiloFee,
+            "Fuel Surcharge (%)": s.fuelSurcharge
+          }));
+          setStatewiseCharges(transformedStatewiseCharges);
+          
+          // Extract unique states from the statewise charges data
+          const uniqueStates = [...new Set(transformedStatewiseCharges.map(charge => charge.State))].sort();
+          setStates(uniqueStates);
+        }
+
       } catch (error) {
-        console.error('Error loading static data:', error);
-        alert(`Error loading configuration data: ${error.message}`);
+        console.error('Error fetching data:', error);
+      } finally {
+        setLoading(false);
       }
     };
 
-    loadStaticData();
+    fetchData();
     loadSavedSelections();
-  }, [loadSavedSelections]);
+  }, [API_BASE_URL, loadSavedSelections]);
 
   const openAddBoxDialog = () => {
     setBoxToDuplicate(null);
@@ -133,16 +162,16 @@ export default function Dashboard() {
     }
 
     // Validate data is loaded
-    if (!states.length || !providers.length || !fixedCharges.length) {
+    if (!states.length || !providers.length || !fixedCharges.length || !statewiseCharges.length) {
       alert('Configuration data is still loading. Please wait and try again.');
       return;
     }
 
     console.log('Calculating for state:', selectedState);
-    console.log('Available states:', states.map(s => s.State));
+    console.log('Available states:', states);
 
-    // Sum all boxes for total applicable weight
-    const stateFiltered = states.filter(s => s.State && s.State.toLowerCase() === selectedState.toLowerCase());
+    // Filter statewise charges for the selected state
+    const stateFiltered = statewiseCharges.filter(s => s.State && s.State.toLowerCase() === selectedState.toLowerCase());
     
     if (stateFiltered.length === 0) {
       alert(`No data found for state: ${selectedState}`);
@@ -173,12 +202,41 @@ export default function Dashboard() {
       const fuelCharge = (baseCost * fuelPct) / 100;
 
       const totalBoxes = boxes.reduce((sum, box) => sum + box.quantity, 0);
-      const docket = (Number(fixed?.["Docket Charge (INR)"]) || 0) * totalBoxes;
-      const codCharge = cod ? ((Number(fixed?.["COD Charge (INR)"]) || 0) * totalBoxes) : 0;
-      const holidayCharge = holiday ? ((Number(fixed?.["Holiday Charge (INR)"]) || 0) * totalBoxes) : 0;
-      const outstationCharge = outstation ? ((Number(fixed?.["Outstation Charge (INR)"]) || 0) * totalBoxes) : 0;
+      
+      // Fixed charges applied only ONCE per shipment (not per box)
+      const docket = Number(fixed?.["Docket Charge (INR)"]) || 0;
+      const codCharge = cod ? (Number(fixed?.["COD Charge (INR)"]) || 0) : 0;
+      const holidayCharge = holiday ? (Number(fixed?.["Holiday Charge (INR)"]) || 0) : 0;
+      const outstationCharge = outstation ? (Number(fixed?.["Outstation Charge (INR)"]) || 0) : 0;
+      
+      // NGT Green Tax - fixed charge per shipment
+      const ngtGreenTax = Number(fixed?.["NGT Green Tax (INR)"]) || 0;
+      
+      // Insurance charge - percentage of shipment value
+      let insuranceCharge = 0;
+      if (shipmentValue && insurancePercentage && !isNaN(shipmentValue) && !isNaN(insurancePercentage)) {
+        const insuranceRate = Number(fixed?.["Insurance Charge (%)"]) || 0;
+        insuranceCharge = (Number(shipmentValue) * Number(insurancePercentage) * insuranceRate) / 10000; // percentage of percentage
+      }
+      
+      // Kerala/North East handling charge - per box for specific states
+      let stateSpecificCharge = 0;
+      const isKeralaOrNorthEast = selectedState.toLowerCase().includes('kerala') || 
+                                 selectedState.toLowerCase().includes('assam') ||
+                                 selectedState.toLowerCase().includes('manipur') ||
+                                 selectedState.toLowerCase().includes('meghalaya') ||
+                                 selectedState.toLowerCase().includes('mizoram') ||
+                                 selectedState.toLowerCase().includes('nagaland') ||
+                                 selectedState.toLowerCase().includes('tripura') ||
+                                 selectedState.toLowerCase().includes('arunachal pradesh');
+      
+      if (isKeralaOrNorthEast) {
+        const handlingChargePerBox = Number(fixed?.["Kerala North East Handling Charge (INR)"]) || 15;
+        stateSpecificCharge = handlingChargePerBox * totalBoxes;
+      }
 
-      const total = baseCost + fuelCharge + docket + codCharge + holidayCharge + outstationCharge;
+      const total = baseCost + fuelCharge + docket + codCharge + holidayCharge + 
+                   outstationCharge + ngtGreenTax + insuranceCharge + stateSpecificCharge;
 
       return {
         providerName: provider?.["Provider Name"] || `Unknown Provider (ID: ${vendorId})`,
@@ -189,6 +247,9 @@ export default function Dashboard() {
         codCharge: codCharge.toFixed(2),
         holidayCharge: holidayCharge.toFixed(2),
         outstationCharge: outstationCharge.toFixed(2),
+        ngtGreenTax: ngtGreenTax.toFixed(2),
+        insuranceCharge: insuranceCharge.toFixed(2),
+        stateSpecificCharge: stateSpecificCharge.toFixed(2),
         total: total.toFixed(2),
       };
     });
@@ -198,7 +259,6 @@ export default function Dashboard() {
     providerResults.sort((a, b) => parseFloat(a.total) - parseFloat(b.total));
     setResults(providerResults);
     setExpandedIdx(null);
-    setShowResults(true);
     setSelectedProviderIdx(null);
     setVendorName("");
   };
@@ -429,6 +489,89 @@ export default function Dashboard() {
     }
   };
 
+  // Add function to handle data updates from advanced settings
+  const handleDataUpdate = (dataType, newData) => {
+    // Validate that newData is an array and has the correct structure
+    if (!Array.isArray(newData) || newData.length === 0) {
+      console.error('Invalid data provided for update:', dataType);
+      alert('Error: Invalid data format. Please check your upload file.');
+      return;
+    }
+
+    // Additional validation based on data type
+    let isValidStructure = false;
+    switch (dataType) {
+      case 'providers':
+        isValidStructure = newData.every(item => 
+          item.hasOwnProperty('Provider ID') && 
+          item.hasOwnProperty('Provider Name')
+        );
+        break;
+      case 'states':
+        isValidStructure = newData.every(item => 
+          item.hasOwnProperty('Provider ID') && 
+          item.hasOwnProperty('State') &&
+          item.hasOwnProperty('Per Kilo Fee (INR)') &&
+          item.hasOwnProperty('Fuel Surcharge (%)')
+        );
+        break;
+      case 'fixed':
+        isValidStructure = newData.every(item => 
+          item.hasOwnProperty('Provider ID') && 
+          item.hasOwnProperty('Docket Charge (INR)') &&
+          item.hasOwnProperty('COD Charge (INR)')
+        );
+        break;
+      default:
+        console.warn('Unknown data type:', dataType);
+        return;
+    }
+
+    if (!isValidStructure) {
+      console.error('Data structure validation failed for:', dataType);
+      alert(`Error: Uploaded ${dataType} data does not have the required structure. Please check your file format.`);
+      return;
+    }
+
+    try {
+      switch (dataType) {
+        case 'providers':
+          setProviders(newData);
+          localStorage.setItem('customProviders', JSON.stringify(newData));
+          console.log(`Updated ${newData.length} provider records`);
+          break;
+        case 'states':
+          // Transform the statewise charges data and extract unique states
+          setStatewiseCharges(newData);
+          const uniqueStates = [...new Set(newData.map(s => s.State))].sort();
+          setStates(uniqueStates);
+          localStorage.setItem('customStates', JSON.stringify(newData));
+          console.log(`Updated ${newData.length} state charge records`);
+          break;
+        case 'fixed':
+          setFixedCharges(newData);
+          localStorage.setItem('customFixedCharges', JSON.stringify(newData));
+          console.log(`Updated ${newData.length} fixed charge records`);
+          break;
+        default:
+          console.warn('Unknown data type:', dataType);
+          return;
+      }
+      
+      // Clear current results to force recalculation with new data
+      setResults([]);
+      setSelectedProviderIdx(null);
+      setSelectedState(""); // Reset state selection to force user to reselect
+      
+      // Show success message
+      alert(`Successfully updated ${dataType} data with ${newData.length} records. Please reselect your state and recalculate.`);
+      
+    } catch (error) {
+      console.error('Error updating data:', error);
+      alert(`Error saving ${dataType} data: ${error.message}`);
+    }
+  };
+
   return (
     <div className="dashboard-container">
       {/* Modern animated background */}
@@ -438,16 +581,31 @@ export default function Dashboard() {
         <div className="gradient-orb orb-3"></div>
       </div>
 
+      {/* Three-dots menu button in top right corner */}
+      <button
+        className="page-settings-btn"
+        onClick={() => setAdvancedSettingsOpen(true)}
+        title="Advanced Settings & Data Management"
+      >
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="1" fill="currentColor"/>
+          <circle cx="19" cy="12" r="1" fill="currentColor"/>
+          <circle cx="5" cy="12" r="1" fill="currentColor"/>
+        </svg>
+      </button>
+
       <div className="dashboard-layout">
         {/* Left Panel - Input Form */}
         <div className="dashboard-left-panel">
           <div className="form-card">
             <div className="form-header">
-              <h1 className="form-title">
-                <span className="title-icon">📦</span>
-                Shipping Calculator
-              </h1>
-              <p className="form-subtitle">Calculate optimal shipping costs across providers</p>
+              <div className="header-main">
+                <h1 className="form-title">
+                  <span className="title-icon">📦</span>
+                  Shipping Calculator
+                </h1>
+                <p className="form-subtitle">Calculate optimal shipping costs across providers</p>
+              </div>
             </div>
 
             <div className="form-content">
@@ -464,14 +622,50 @@ export default function Dashboard() {
                     className="modern-select"
                   >
                     <option value="">Choose your state</option>
-                    {[...new Set(states.map(s => s.State))].map((s, i) => (
-                      <option key={i} value={s}>{s}</option>
+                    {states.map((state, i) => (
+                      <option key={i} value={state}>{state}</option>
                     ))}
                   </select>
                   <div className="select-arrow">
                     <svg width="12" height="8" viewBox="0 0 12 8" fill="none">
                       <path d="M1 1.5L6 6.5L11 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
+                  </div>
+                </div>
+              </div>
+
+              {/* Shipment Value and Insurance Section */}
+              <div className="shipment-section">
+                <h3 className="section-title">Shipment Details</h3>
+                <div className="input-row">
+                  <div className="input-group half-width">
+                    <label className="input-label">
+                      <span className="label-text">Total Shipment Value (₹)</span>
+                    </label>
+                    <input
+                      type="number"
+                      value={shipmentValue}
+                      onChange={(e) => setShipmentValue(e.target.value)}
+                      placeholder="Enter total value"
+                      className="modern-input"
+                      min="0"
+                      step="0.01"
+                    />
+                  </div>
+                  <div className="input-group half-width">
+                    <label className="input-label">
+                      <span className="label-text">Insurance Coverage (%)</span>
+                    </label>
+                    <input
+                      type="number"
+                      value={insurancePercentage}
+                      onChange={(e) => setInsurancePercentage(e.target.value)}
+                      placeholder="e.g., 100"
+                      className="modern-input"
+                      min="0"
+                      max="100"
+                      step="1"
+                    />
                   </div>
                 </div>
               </div>
@@ -709,6 +903,24 @@ export default function Dashboard() {
                                 <span className="cost-value">₹{r.outstationCharge}</span>
                               </div>
                             )}
+                            {parseFloat(r.ngtGreenTax) > 0 && (
+                              <div className="cost-item">
+                                <span className="cost-label">NGT Green Tax</span>
+                                <span className="cost-value">₹{r.ngtGreenTax}</span>
+                              </div>
+                            )}
+                            {parseFloat(r.insuranceCharge) > 0 && (
+                              <div className="cost-item">
+                                <span className="cost-label">Insurance Charge</span>
+                                <span className="cost-value">₹{r.insuranceCharge}</span>
+                              </div>
+                            )}
+                            {parseFloat(r.stateSpecificCharge) > 0 && (
+                              <div className="cost-item">
+                                <span className="cost-label">Kerala/NE Handling</span>
+                                <span className="cost-value">₹{r.stateSpecificCharge}</span>
+                              </div>
+                            )}
                           </div>
                           
                           <button
@@ -754,6 +966,15 @@ export default function Dashboard() {
         selectedVendor={selectedVendor}
         setSelectedVendor={setSelectedVendor}
         onExport={handleExportConfirm}
+      />
+
+      <AdvancedSettings
+        isOpen={advancedSettingsOpen}
+        onClose={() => setAdvancedSettingsOpen(false)}
+        providers={providers}
+        states={statewiseCharges}
+        fixedCharges={fixedCharges}
+        onDataUpdate={handleDataUpdate}
       />
     </div>
   );

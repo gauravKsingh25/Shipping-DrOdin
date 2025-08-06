@@ -1,8 +1,8 @@
-import express from 'express';
-import mongoose from 'mongoose';
-import cors from 'cors';
-import chalk from 'chalk';
-import dotenv from 'dotenv';
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const chalk = require('chalk');
+const dotenv = require('dotenv');
 dotenv.config();
 
 const app = express();
@@ -58,8 +58,24 @@ mongoose.connect(uri)
     process.exit(1);
   });
 
-import selectionsRouter from './routes/selections.js';
+const selectionsRouter = require('./routes/selections.js');
+const providersRouter = require('./routes/providers.js');
+const chargesRouter = require('./routes/charges.js');
+const { seedDatabase } = require('./utils/seedData.js');
+
 app.use('/api/selections', selectionsRouter);
+app.use('/api/providers', providersRouter);
+app.use('/api/charges', chargesRouter);
+
+// Add seeding endpoint for development
+app.post('/api/seed', async (req, res) => {
+  try {
+    await seedDatabase();
+    res.json({ success: true, message: 'Database seeded successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 app.get('/', (req, res) => {
   res.json({ message: 'Hello from the backend!', status: 'running' });
