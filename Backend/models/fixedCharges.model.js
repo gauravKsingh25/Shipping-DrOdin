@@ -15,6 +15,34 @@ const fixedChargesSchema = new Schema({
   timestamps: true,
 });
 
+// Auto-assign providerId from existing providers or auto-increment
+fixedChargesSchema.pre('save', async function(next) {
+  if (this.isNew && !this.providerId) {
+    try {
+      const Provider = require('./provider.model');
+      
+      // Try to find an existing provider that doesn't have fixed charges
+      const existingProviders = await Provider.find({}).sort({ providerId: 1 });
+      const existingFixedCharges = await this.constructor.find({}).sort({ providerId: 1 });
+      const usedProviderIds = existingFixedCharges.map(fc => fc.providerId);
+      
+      // Find the first provider without fixed charges
+      const availableProvider = existingProviders.find(p => !usedProviderIds.includes(p.providerId));
+      
+      if (availableProvider) {
+        this.providerId = availableProvider.providerId;
+      } else {
+        // If no available provider, get the next available ID
+        const lastFixed = await this.constructor.findOne().sort({ providerId: -1 });
+        this.providerId = lastFixed ? lastFixed.providerId + 1 : 1;
+      }
+    } catch (error) {
+      next(error);
+    }
+  }
+  next();
+});
+
 const FixedCharges = mongoose.model('FixedCharges', fixedChargesSchema);
 
 module.exports = FixedCharges;

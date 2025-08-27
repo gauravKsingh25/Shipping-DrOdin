@@ -36,10 +36,11 @@ export default function Dashboard() {
   const [shipmentValue, setShipmentValue] = useState("");
   const [insurancePercentage, setInsurancePercentage] = useState("");
 
-  // API base URL - fix the production URL to match backend CORS
-  const API_BASE_URL = process.env.NODE_ENV === 'production' 
-    ? 'https://shipping-drodin.onrender.com' 
-    : 'http://localhost:5000';
+  // API base URL - use environment variable with fallback
+  const API_BASE_URL = process.env.REACT_APP_API_URL || 
+    (process.env.NODE_ENV === 'production' 
+      ? 'https://shipping-drodin.onrender.com' 
+      : 'http://localhost:5000');
 
   const loadSavedSelections = useCallback(async () => {
     try {
@@ -100,6 +101,7 @@ export default function Dashboard() {
           const statewiseChargesData = await statewiseChargesResponse.json();
           // Transform MongoDB data to match expected format
           const transformedStatewiseCharges = statewiseChargesData.map(s => ({
+            "_id": s._id, // Include MongoDB ID for updates
             "Provider ID": s.providerId,
             "Provider Name": s.providerName,
             "State": s.state,
@@ -130,8 +132,9 @@ export default function Dashboard() {
   };
 
   const openDuplicateBoxDialog = idx => {
-    setBoxToDuplicate(boxes[idx]);
-    setBoxDialogOpen(true);
+    const boxToDuplicate = boxes[idx];
+    const duplicatedBox = { ...boxToDuplicate, quantity: boxToDuplicate.quantity };
+    setBoxes(prev => [...prev, duplicatedBox]);
   };
 
   const handleAddBox = box => {
@@ -490,7 +493,7 @@ export default function Dashboard() {
   };
 
   // Add function to handle data updates from advanced settings
-  const handleDataUpdate = (dataType, newData) => {
+  const handleDataUpdate = async (dataType, newData) => {
     // Validate that newData is an array and has the correct structure
     if (!Array.isArray(newData) || newData.length === 0) {
       console.error('Invalid data provided for update:', dataType);
@@ -533,42 +536,93 @@ export default function Dashboard() {
       return;
     }
 
+    setLoading(true);
     try {
+      let endpoint = '';
+      let payload = {};
+
       switch (dataType) {
         case 'providers':
-          setProviders(newData);
-          localStorage.setItem('customProviders', JSON.stringify(newData));
-          console.log(`Updated ${newData.length} provider records`);
+          endpoint = `${API_BASE_URL}/api/providers/bulk-update`;
+          payload = { providers: newData };
           break;
         case 'states':
-          // Transform the statewise charges data and extract unique states
-          setStatewiseCharges(newData);
-          const uniqueStates = [...new Set(newData.map(s => s.State))].sort();
-          setStates(uniqueStates);
-          localStorage.setItem('customStates', JSON.stringify(newData));
-          console.log(`Updated ${newData.length} state charge records`);
+          endpoint = `${API_BASE_URL}/api/charges/statewise/bulk-update`;
+          payload = { charges: newData };
           break;
         case 'fixed':
-          setFixedCharges(newData);
-          localStorage.setItem('customFixedCharges', JSON.stringify(newData));
-          console.log(`Updated ${newData.length} fixed charge records`);
+          endpoint = `${API_BASE_URL}/api/charges/fixed/bulk-update`;
+          payload = { charges: newData };
           break;
         default:
           console.warn('Unknown data type:', dataType);
           return;
       }
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
       
-      // Clear current results to force recalculation with new data
-      setResults([]);
-      setSelectedProviderIdx(null);
-      setSelectedState(""); // Reset state selection to force user to reselect
-      
-      // Show success message
-      alert(`Successfully updated ${dataType} data with ${newData.length} records. Please reselect your state and recalculate.`);
+      if (result.success) {
+        // Update local state after successful API call
+        switch (dataType) {
+          case 'providers':
+            setProviders(newData);
+            localStorage.setItem('customProviders', JSON.stringify(newData));
+            console.log(`Updated ${newData.length} provider records`);
+            break;
+          case 'states':
+            // Transform the statewise charges data and extract unique states
+            setStatewiseCharges(newData);
+            const uniqueStates = [...new Set(newData.map(s => s.State))].sort();
+            setStates(uniqueStates);
+            localStorage.setItem('customStates', JSON.stringify(newData));
+            console.log(`Updated ${newData.length} state charge records`);
+            break;
+          case 'fixed':
+            setFixedCharges(newData);
+            localStorage.setItem('customFixedCharges', JSON.stringify(newData));
+            console.log(`Updated ${newData.length} fixed charge records`);
+            break;
+          default:
+            console.warn('Unknown data type:', dataType);
+            break;
+        }
+        
+        // Clear current results to force recalculation with new data
+        setResults([]);
+        setSelectedProviderIdx(null);
+        setSelectedState(""); // Reset state selection to force user to reselect
+        
+        // Show success message
+        alert(`Successfully updated ${dataType} data with ${newData.length} records. Database has been updated. Please reselect your state and recalculate.`);
+      } else {
+        throw new Error(result.error || 'Failed to update data');
+      }
       
     } catch (error) {
       console.error('Error updating data:', error);
-      alert(`Error saving ${dataType} data: ${error.message}`);
+      let errorMessage = `Error saving ${dataType} data: `;
+      
+      if (error.message.includes('Failed to fetch')) {
+        errorMessage += 'Unable to connect to server. Please check if the backend is running.';
+      } else {
+        errorMessage += error.message;
+      }
+      
+      alert(errorMessage);
+    } finally {
+      setLoading(false);
     }
   };
 

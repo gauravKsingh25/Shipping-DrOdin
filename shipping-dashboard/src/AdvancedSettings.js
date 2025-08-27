@@ -13,428 +13,415 @@ export default function AdvancedSettings({
   const [isUploading, setIsUploading] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   
-  // Preview state
-  const [previewData, setPreviewData] = useState(null);
-  const [validationResult, setValidationResult] = useState(null);
-  const [showConfirmation, setShowConfirmation] = useState(false);
+  // Password protection state
+  const [isPasswordVerified, setIsPasswordVerified] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  
+  // Hardcoded password
+  const ADMIN_PASSWORD = "Odin@odin123";
+
+  // Password verification functions
+  const handlePasswordSubmit = (e) => {
+    e.preventDefault();
+    if (passwordInput === ADMIN_PASSWORD) {
+      setIsPasswordVerified(true);
+      setPasswordError('');
+      setPasswordInput('');
+    } else {
+      setPasswordError('Invalid password. Access denied.');
+      setPasswordInput('');
+    }
+  };
+
+  const handlePasswordClose = () => {
+    setPasswordInput('');
+    setPasswordError('');
+    setIsPasswordVerified(false);
+    onClose();
+  };
+
+  // Reset password verification when modal closes
+  React.useEffect(() => {
+    if (!isOpen) {
+      setIsPasswordVerified(false);
+      setPasswordInput('');
+      setPasswordError('');
+    }
+  }, [isOpen]);
+
+  // Edit mode states
+  const [editingRowIndex, setEditingRowIndex] = useState(null);
+  const [editingData, setEditingData] = useState({});
+  const [showCreateRow, setShowCreateRow] = useState(false);
+  const [newRowData, setNewRowData] = useState({});
 
   const tabs = [
-    { id: 'providers', label: 'Providers', icon: '🚚' },
-    { id: 'states', label: 'State Charges', icon: '🗺️' },
-    { id: 'fixed', label: 'Fixed Charges', icon: '💰' },
-    { id: 'upload', label: 'Upload Data', icon: '📁' },
+    { id: 'providers', label: 'Service Providers', icon: '🚚', description: 'Manage shipping service providers' },
+    { id: 'states', label: 'State Charges', icon: '🗺️', description: 'Manage per-state shipping rates' },
+    { id: 'fixed', label: 'Fixed Charges', icon: '💰', description: 'Manage fixed fees and surcharges' },
   ];
 
   // Data validation schemas
   const dataSchemas = {
     providers: {
-      required: ['Provider ID', 'Provider Name'],
-      optional: ['Status', 'Unnamed: 2'],
+      required: ['Provider Name'],
+      optional: ['Provider ID', 'description', 'isActive'],
+      readOnly: ['Provider ID'], // Provider ID is auto-generated, read-only
       types: {
-        'Provider ID': 'string',
+        'Provider ID': 'number',
         'Provider Name': 'string',
-        'Status': 'string',
-        'Unnamed: 2': 'string'
+        'description': 'string',
+        'isActive': 'boolean'
       }
     },
     states: {
-      required: ['Provider ID', 'State', 'Per Kilo Fee (INR)', 'Fuel Surcharge (%)'],
-      optional: [],
+      required: ['State', 'Per Kilo Fee (INR)', 'Fuel Surcharge (%)'],
+      optional: ['Provider ID', 'Provider Name'],
+      readOnly: ['Provider ID', 'Provider Name'], // Auto-generated/assigned
       types: {
-        'Provider ID': 'string',
+        'Provider ID': 'number',
+        'Provider Name': 'string',
         'State': 'string',
         'Per Kilo Fee (INR)': 'number',
         'Fuel Surcharge (%)': 'number'
       }
     },
     fixed: {
-      required: ['Provider ID', 'Docket Charge (INR)', 'COD Charge (INR)'],
-      optional: ['Holiday Charge (INR)', 'Outstation Charge (INR)'],
+      required: ['Docket Charge (INR)', 'COD Charge (INR)', 'Holiday Charge (INR)', 'Outstation Charge (INR)', 'Insurance Charge (%)', 'NGT Green Tax (INR)', 'Kerala North East Handling Charge (INR)'],
+      optional: ['Provider ID'],
+      readOnly: ['Provider ID'], // Auto-generated
       types: {
-        'Provider ID': 'string',
+        'Provider ID': 'number',
         'Docket Charge (INR)': 'number',
         'COD Charge (INR)': 'number',
         'Holiday Charge (INR)': 'number',
-        'Outstation Charge (INR)': 'number'
+        'Outstation Charge (INR)': 'number',
+        'Insurance Charge (%)': 'number',
+        'NGT Green Tax (INR)': 'number',
+        'Kerala North East Handling Charge (INR)': 'number'
       }
     }
   };
 
-  const validateData = (data, dataType) => {
-    const schema = dataSchemas[dataType];
-    if (!schema) {
-      return { isValid: false, errors: ['Unknown data type'], warnings: [] };
+  // Get current data based on active tab
+  const getCurrentData = () => {
+    switch (activeTab) {
+      case 'providers': return providers || [];
+      case 'states': return states || []; // This is actually statewiseCharges from Dashboard
+      case 'fixed': return fixedCharges || [];
+      default: return [];
     }
+  };
 
-    const errors = [];
-    const warnings = [];
-    const validatedData = [];
+  // Helper functions for edit mode
+  const startEdit = (rowIndex) => {
+    const currentData = getCurrentData();
+    const rowData = currentData[rowIndex];
+    setEditingRowIndex(rowIndex);
+    setEditingData({ ...rowData });
+  };
 
-    // Check if data is array
-    if (!Array.isArray(data)) {
-      return { isValid: false, errors: ['Data must be an array'], warnings: [] };
-    }
+  const cancelEdit = () => {
+    setEditingRowIndex(null);
+    setEditingData({});
+  };
 
-    if (data.length === 0) {
-      return { isValid: false, errors: ['Data cannot be empty'], warnings: [] };
-    }
-
-    // Get all unique headers from the data
-    const allHeaders = new Set();
-    data.forEach(row => {
-      Object.keys(row).forEach(key => allHeaders.add(key));
-    });
-
-    // Check for required fields
-    const missingRequired = schema.required.filter(field => !allHeaders.has(field));
-    if (missingRequired.length > 0) {
-      errors.push(`Missing required columns: ${missingRequired.join(', ')}`);
-    }
-
-    // Check for unexpected fields
-    const allowedFields = [...schema.required, ...schema.optional];
-    const unexpectedFields = Array.from(allHeaders).filter(field => !allowedFields.includes(field));
-    if (unexpectedFields.length > 0) {
-      warnings.push(`Unexpected columns found (will be ignored): ${unexpectedFields.join(', ')}`);
-    }
-
-    // Validate each row
-    data.forEach((row, index) => {
-      const rowErrors = [];
-      const validatedRow = {};
-
-      // Check required fields in each row
-      schema.required.forEach(field => {
-        const value = row[field];
-        if (value === undefined || value === null || value === '') {
-          rowErrors.push(`Row ${index + 1}: Missing required field '${field}'`);
-        } else {
-          // Type validation and conversion
-          const expectedType = schema.types[field];
-          if (expectedType === 'number') {
-            const numValue = parseFloat(value);
-            if (isNaN(numValue)) {
-              rowErrors.push(`Row ${index + 1}: '${field}' must be a number, got '${value}'`);
-            } else {
-              validatedRow[field] = numValue;
-            }
-          } else {
-            validatedRow[field] = String(value).trim();
+  const saveEdit = async () => {
+    const currentData = getCurrentData();
+    const originalRow = currentData[editingRowIndex];
+    
+    try {
+      setIsUploading(true);
+      setUploadStatus('💾 Saving changes...');
+      
+      let endpoint = '';
+      let payload = {};
+      let method = 'PUT';
+      
+      // Build API call based on data type
+      switch (activeTab) {
+        case 'providers':
+          endpoint = `${getAPIBaseURL()}/api/providers/update-row/${originalRow['Provider ID']}`;
+          payload = {
+            providerName: editingData['Provider Name'],
+            description: editingData.description,
+            isActive: editingData.isActive
+          };
+          break;
+        case 'states':
+          // For statewise charges, we need to use the MongoDB _id field for updates
+          const stateId = originalRow._id || originalRow.id;
+          if (!stateId) {
+            throw new Error('Cannot update statewise charge: Missing ID field');
           }
-        }
+          endpoint = `${getAPIBaseURL()}/api/charges/statewise/update-row/${stateId}`;
+          payload = {
+            perKiloFee: parseFloat(editingData['Per Kilo Fee (INR)']) || 0,
+            fuelSurcharge: parseFloat(editingData['Fuel Surcharge (%)']) || 0
+          };
+          break;
+        case 'fixed':
+          endpoint = `${getAPIBaseURL()}/api/charges/fixed/update-row/${originalRow['Provider ID']}`;
+          payload = {
+            docketCharge: editingData['Docket Charge (INR)'],
+            codCharge: editingData['COD Charge (INR)'],
+            holidayCharge: editingData['Holiday Charge (INR)'],
+            outstationCharge: editingData['Outstation Charge (INR)'],
+            insuranceChargePercent: editingData['Insurance Charge (%)'],
+            ngtGreenTax: editingData['NGT Green Tax (INR)'],
+            keralaHandlingCharge: editingData['Kerala North East Handling Charge (INR)']
+          };
+          break;
+        default:
+          throw new Error('Unknown data type');
+      }
+      
+      const response = await fetch(endpoint, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload)
       });
-
-      // Process optional fields
-      schema.optional.forEach(field => {
-        const value = row[field];
-        if (value !== undefined && value !== null && value !== '') {
-          const expectedType = schema.types[field];
-          if (expectedType === 'number') {
-            const numValue = parseFloat(value);
-            if (isNaN(numValue)) {
-              warnings.push(`Row ${index + 1}: Optional field '${field}' is not a valid number, setting to 0`);
-              validatedRow[field] = 0;
-            } else {
-              validatedRow[field] = numValue;
-            }
-          } else {
-            validatedRow[field] = String(value).trim();
-          }
-        } else if (schema.types[field] === 'number') {
-          validatedRow[field] = 0;
-        }
-      });
-
-      if (rowErrors.length > 0) {
-        errors.push(...rowErrors);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Update local data
+        const updatedData = [...currentData];
+        updatedData[editingRowIndex] = { ...editingData };
+        
+        // Update parent component data
+        onDataUpdate(activeTab, updatedData);
+        
+        setUploadStatus('✅ Changes saved successfully!');
+        
+        // Reset edit state
+        cancelEdit();
+        
+        // Clear status after delay
+        setTimeout(() => setUploadStatus(''), 3000);
       } else {
-        validatedData.push(validatedRow);
+        throw new Error(result.error || 'Failed to save changes');
       }
-    });
-
-    // Additional business logic validation
-    if (dataType === 'providers') {
-      const providerIds = validatedData.map(p => p['Provider ID']);
-      const duplicateIds = providerIds.filter((id, index) => providerIds.indexOf(id) !== index);
-      if (duplicateIds.length > 0) {
-        errors.push(`Duplicate Provider IDs found: ${[...new Set(duplicateIds)].join(', ')}`);
-      }
-    }
-
-    if (dataType === 'states') {
-      // Check for negative values
-      validatedData.forEach((row, index) => {
-        if (row['Per Kilo Fee (INR)'] < 0) {
-          errors.push(`Row ${index + 1}: Per Kilo Fee cannot be negative`);
-        }
-        if (row['Fuel Surcharge (%)'] < 0 || row['Fuel Surcharge (%)'] > 100) {
-          warnings.push(`Row ${index + 1}: Fuel Surcharge should be between 0-100%`);
-        }
-      });
-    }
-
-    if (dataType === 'fixed') {
-      // Check for negative charges
-      validatedData.forEach((row, index) => {
-        Object.keys(row).forEach(key => {
-          if (key.includes('Charge') && row[key] < 0) {
-            errors.push(`Row ${index + 1}: ${key} cannot be negative`);
-          }
-        });
-      });
-    }
-
-    return {
-      isValid: errors.length === 0,
-      errors,
-      warnings,
-      validatedData: errors.length === 0 ? validatedData : []
-    };
-  };
-
-  const handleFileUpload = (event, dataType) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    // Only accept CSV and JSON files
-    const isCSV = file.name.endsWith('.csv');
-    const isJSON = file.name.endsWith('.json');
-    const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
-
-    if (!isCSV && !isJSON && !isExcel) {
-      setUploadStatus('❌ Please select a CSV, JSON, or Excel file');
+      
+    } catch (error) {
+      console.error('Save error:', error);
+      setUploadStatus(`❌ Error saving changes: ${error.message}`);
       setTimeout(() => setUploadStatus(''), 5000);
-      return;
+    } finally {
+      setIsUploading(false);
     }
-
-    setIsUploading(true);
-    setUploadStatus('📁 Reading file...');
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        let jsonData;
-        
-        if (isCSV) {
-          setUploadStatus('📊 Parsing CSV data...');
-          jsonData = parseCSV(e.target.result, dataType);
-        } else if (isJSON) {
-          setUploadStatus('📊 Parsing JSON data...');
-          jsonData = JSON.parse(e.target.result);
-        } else if (isExcel) {
-          setUploadStatus('❌ Excel files are not supported yet. Please convert to CSV format.');
-          setIsUploading(false);
-          setTimeout(() => setUploadStatus(''), 5000);
-          return;
-        }
-        
-        setUploadStatus('✅ Validating data structure...');
-        
-        // Validate the parsed data
-        const validation = validateData(jsonData, dataType);
-        
-        // Set preview data regardless of validation result
-        setPreviewData({
-          type: dataType,
-          data: jsonData,
-          validatedData: validation.validatedData
-        });
-        setValidationResult(validation);
-        
-        if (validation.isValid) {
-          setUploadStatus(`✅ File processed successfully! ${validation.validatedData.length} valid records found.`);
-        } else {
-          setUploadStatus(`⚠️ File processed with errors. Please review the preview below.`);
-        }
-        
-        // Clear the file input
-        event.target.value = '';
-        
-      } catch (error) {
-        console.error('File upload error:', error);
-        setUploadStatus(`❌ Error processing file: ${error.message}`);
-        setPreviewData(null);
-        setValidationResult(null);
-      } finally {
-        setIsUploading(false);
-        setTimeout(() => {
-          if (!previewData) {
-            setUploadStatus('');
-          }
-        }, 5000);
-      }
-    };
-
-    reader.readAsText(file);
   };
 
-  const parseCSV = (csvText, dataType) => {
-    const lines = csvText.split('\n').filter(line => line.trim());
-    if (lines.length < 2) {
-      throw new Error('CSV file must have at least a header row and one data row');
-    }
+  const handleFieldChange = (fieldName, value) => {
+    setEditingData(prev => ({
+      ...prev,
+      [fieldName]: value
+    }));
+  };
 
-    const headers = parseCSVLine(lines[0]).map(h => h.trim().replace(/"/g, ''));
-    const data = [];
+  const startCreateRow = () => {
+    const schema = dataSchemas[activeTab];
+    const defaultRow = {};
+    
+    // Initialize with empty values based on schema
+    [...schema.required, ...schema.optional].forEach(field => {
+      if (schema.types[field] === 'number') {
+        defaultRow[field] = 0;
+      } else if (schema.types[field] === 'boolean') {
+        defaultRow[field] = true;
+      } else {
+        defaultRow[field] = '';
+      }
+    });
 
-    for (let i = 1; i < lines.length; i++) {
-      const values = parseCSVLine(lines[i]);
-      if (values.length === 0 || values.every(v => !v.trim())) {
-        continue; // Skip empty rows
+    setNewRowData(defaultRow);
+    setShowCreateRow(true);
+  };
+
+  const cancelCreateRow = () => {
+    setShowCreateRow(false);
+    setNewRowData({});
+  };
+
+  const saveNewRow = async () => {
+    const currentData = getCurrentData();
+    
+    try {
+      setIsUploading(true);
+      setUploadStatus('🆕 Creating new row...');
+      
+      let endpoint = '';
+      let payload = {};
+      
+      // Build API call based on data type
+      switch (activeTab) {
+        case 'providers':
+          endpoint = `${getAPIBaseURL()}/api/providers/create-row`;
+          payload = {
+            // Don't include providerId - let it auto-generate
+            providerName: newRowData['Provider Name'],
+            description: newRowData.description || '',
+            isActive: newRowData.isActive !== undefined ? newRowData.isActive : true
+          };
+          break;
+        case 'states':
+          endpoint = `${getAPIBaseURL()}/api/charges/statewise/create-row`;
+          payload = {
+            // Don't include providerId/providerName - let them auto-generate
+            state: newRowData['State'],
+            perKiloFee: parseFloat(newRowData['Per Kilo Fee (INR)']) || 0,
+            fuelSurcharge: parseFloat(newRowData['Fuel Surcharge (%)']) || 0
+          };
+          break;
+        case 'fixed':
+          endpoint = `${getAPIBaseURL()}/api/charges/fixed/create-row`;
+          payload = {
+            // Don't include providerId - let it auto-generate
+            docketCharge: parseFloat(newRowData['Docket Charge (INR)']) || 0,
+            codCharge: parseFloat(newRowData['COD Charge (INR)']) || 0,
+            holidayCharge: parseFloat(newRowData['Holiday Charge (INR)']) || 0,
+            outstationCharge: parseFloat(newRowData['Outstation Charge (INR)']) || 0,
+            insuranceChargePercent: parseFloat(newRowData['Insurance Charge (%)']) || 0,
+            ngtGreenTax: parseFloat(newRowData['NGT Green Tax (INR)']) || 0,
+            keralaHandlingCharge: parseFloat(newRowData['Kerala North East Handling Charge (INR)']) || 0
+          };
+          break;
+        default:
+          throw new Error('Unknown data type');
       }
       
-      if (values.length !== headers.length) {
-        throw new Error(`Row ${i + 1} has ${values.length} columns, expected ${headers.length}`);
-      }
-
-      const row = {};
-      headers.forEach((header, index) => {
-        row[header] = values[index].trim();
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload)
       });
       
-      data.push(row);
-    }
-
-    if (data.length === 0) {
-      throw new Error('No valid data rows found in CSV file');
-    }
-
-    return data;
-  };
-
-  const parseCSVLine = (line) => {
-    const result = [];
-    let current = '';
-    let inQuotes = false;
-    
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      
-      if (char === '"') {
-        inQuotes = !inQuotes;
-      } else if (char === ',' && !inQuotes) {
-        result.push(current);
-        current = '';
-      } else {
-        current += char;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Add to local data
+        const updatedData = [...currentData, { ...newRowData }];
+        
+        // Update parent component data
+        onDataUpdate(activeTab, updatedData);
+        
+        setUploadStatus('✅ New row created successfully!');
+        
+        // Reset create state
+        cancelCreateRow();
+        
+        // Clear status after delay
+        setTimeout(() => setUploadStatus(''), 3000);
+      } else {
+        throw new Error(result.error || 'Failed to create new row');
+      }
+      
+    } catch (error) {
+      console.error('Create error:', error);
+      setUploadStatus(`❌ Error creating new row: ${error.message}`);
+      setTimeout(() => setUploadStatus(''), 5000);
+    } finally {
+      setIsUploading(false);
     }
-    
-    result.push(current);
-    return result;
   };
 
-  const handleSavePreview = () => {
-    if (!previewData || !validationResult || !validationResult.isValid) {
+  const deleteRow = async (rowIndex) => {
+    if (!window.confirm('Are you sure you want to delete this row? This action cannot be undone.')) {
       return;
     }
-    setShowConfirmation(true);
-  };
-
-  const confirmSave = () => {
-    if (previewData && validationResult && validationResult.isValid) {
-      onDataUpdate(previewData.type, validationResult.validatedData);
-      setPreviewData(null);
-      setValidationResult(null);
-      setShowConfirmation(false);
-      setUploadStatus('✅ Data saved successfully! Database has been updated.');
-      setTimeout(() => setUploadStatus(''), 3000);
-    }
-  };
-
-  const cancelPreview = () => {
-    setPreviewData(null);
-    setValidationResult(null);
-    setUploadStatus('');
-  };
-
-  const downloadSampleFile = (dataType, format = 'json') => {
-    let sampleData = [];
-    let filename = '';
-
-    switch (dataType) {
-      case 'providers':
-        sampleData = [
-          {
-            "Provider ID": "P001",
-            "Provider Name": "Express Logistics",
-            "Status": "Active"
-          },
-          {
-            "Provider ID": "P002",
-            "Provider Name": "QuickShip",
-            "Status": "Inactive"
-          }
-        ];
-        filename = format === 'csv' ? 'providers_template.csv' : 'sample_providers.json';
-        break;
-      case 'states':
-        sampleData = [
-          {
-            "Provider ID": "P001",
-            "State": "Maharashtra",
-            "Per Kilo Fee (INR)": 25.0,
-            "Fuel Surcharge (%)": 12
-          },
-          {
-            "Provider ID": "P001",
-            "State": "Karnataka",
-            "Per Kilo Fee (INR)": 28.0,
-            "Fuel Surcharge (%)": 10
-          }
-        ];
-        filename = format === 'csv' ? 'state_charges_template.csv' : 'sample_state_charges.json';
-        break;
-      case 'fixed':
-        sampleData = [
-          {
-            "Provider ID": "P001",
-            "Docket Charge (INR)": 50,
-            "COD Charge (INR)": 45,
-            "Holiday Charge (INR)": 25,
-            "Outstation Charge (INR)": 40
-          },
-          {
-            "Provider ID": "P002",
-            "Docket Charge (INR)": 55,
-            "COD Charge (INR)": 50,
-            "Holiday Charge (INR)": 30,
-            "Outstation Charge (INR)": 45
-          }
-        ];
-        filename = format === 'csv' ? 'fixed_charges_template.csv' : 'sample_fixed_charges.json';
-        break;
-      default:
-        return;
-    }
-
-    let content, mimeType;
     
-    if (format === 'csv') {
-      const headers = Object.keys(sampleData[0]);
-      const csvHeaders = headers.join(',');
-      const csvRows = sampleData.map(row => 
-        headers.map(header => {
-          const value = row[header];
-          return typeof value === 'string' && (value.includes(',') || value.includes(' ')) 
-            ? `"${value}"` 
-            : value;
-        }).join(',')
-      );
-      content = [csvHeaders, ...csvRows].join('\n');
-      mimeType = 'text/csv';
-    } else {
-      content = JSON.stringify(sampleData, null, 2);
-      mimeType = 'application/json';
+    const currentData = getCurrentData();
+    const rowToDelete = currentData[rowIndex];
+    
+    try {
+      setIsUploading(true);
+      setUploadStatus('🗑️ Deleting row...');
+      
+      let endpoint = '';
+      
+      // Build API call based on data type
+      switch (activeTab) {
+        case 'providers':
+          endpoint = `${getAPIBaseURL()}/api/providers/delete-row/${rowToDelete['Provider ID']}`;
+          break;
+        case 'states':
+          // For statewise charges, we need to use the MongoDB _id field for deletes
+          const stateDeleteId = rowToDelete._id || rowToDelete.id;
+          if (!stateDeleteId) {
+            throw new Error('Cannot delete statewise charge: Missing ID field');
+          }
+          endpoint = `${getAPIBaseURL()}/api/charges/statewise/delete-row/${stateDeleteId}`;
+          break;
+        case 'fixed':
+          endpoint = `${getAPIBaseURL()}/api/charges/fixed/delete-row/${rowToDelete['Provider ID']}`;
+          break;
+        default:
+          throw new Error('Unknown data type');
+      }
+      
+      const response = await fetch(endpoint, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Remove from local data
+        const updatedData = currentData.filter((_, index) => index !== rowIndex);
+        
+        // Update parent component data
+        onDataUpdate(activeTab, updatedData);
+        
+        setUploadStatus('✅ Row deleted successfully!');
+        
+        // Clear status after delay
+        setTimeout(() => setUploadStatus(''), 3000);
+      } else {
+        throw new Error(result.error || 'Failed to delete row');
+      }
+      
+    } catch (error) {
+      console.error('Delete error:', error);
+      setUploadStatus(`❌ Error deleting row: ${error.message}`);
+      setTimeout(() => setUploadStatus(''), 5000);
+    } finally {
+      setIsUploading(false);
     }
+  };
 
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
+  const handleNewRowFieldChange = (fieldName, value) => {
+    setNewRowData(prev => ({
+      ...prev,
+      [fieldName]: value
+    }));
+  };
+
+  // Helper function to get API base URL
+  const getAPIBaseURL = () => {
+    return process.env.REACT_APP_API_URL || 
+      (process.env.NODE_ENV === 'production' 
+        ? 'https://shipping-drodin.onrender.com' 
+        : 'http://localhost:5000');
   };
 
   const renderDataTable = (data, type) => {
@@ -442,18 +429,37 @@ export default function AdvancedSettings({
       return (
         <div className="empty-data">
           <p>No data available</p>
+          <button 
+            className="action-btn create-btn"
+            onClick={startCreateRow}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2"/>
+            </svg>
+            Create New Row
+          </button>
         </div>
       );
     }
 
     const headers = Object.keys(data[0]);
-    const displayData = data; // Show all data instead of limiting to 10
+    const schema = dataSchemas[type];
 
     return (
       <div className="data-table-container">
         <div className="table-header">
           <h4>Current Data ({data.length} records)</h4>
           <div className="table-actions">
+            <button 
+              className="action-btn create-btn"
+              onClick={startCreateRow}
+              disabled={editingRowIndex !== null || showCreateRow}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2"/>
+              </svg>
+              Create New
+            </button>
             <button 
               className="action-btn export-btn"
               onClick={() => exportCurrentData(type)}
@@ -466,6 +472,61 @@ export default function AdvancedSettings({
             </button>
           </div>
         </div>
+
+        {/* Create New Row Form */}
+        {showCreateRow && (
+          <div className="create-row-form">
+            <div className="form-header">
+              <h4>Create New {type.charAt(0).toUpperCase() + type.slice(1)} Record</h4>
+            </div>
+            <div className="form-fields">
+              {headers.filter(header => !schema.readOnly.includes(header)).map(header => (
+                <div key={header} className="field-group">
+                  <label>{header}{schema.required.includes(header) ? ' *' : ''}</label>
+                  {schema.types[header] === 'number' ? (
+                    <input
+                      type="number"
+                      value={newRowData[header] || ''}
+                      onChange={(e) => handleNewRowFieldChange(header, parseFloat(e.target.value) || 0)}
+                      step="0.01"
+                      placeholder={`Enter ${header}`}
+                    />
+                  ) : schema.types[header] === 'boolean' ? (
+                    <select
+                      value={newRowData[header] ? 'true' : 'false'}
+                      onChange={(e) => handleNewRowFieldChange(header, e.target.value === 'true')}
+                    >
+                      <option value="true">Active</option>
+                      <option value="false">Inactive</option>
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={newRowData[header] || ''}
+                      onChange={(e) => handleNewRowFieldChange(header, e.target.value)}
+                      placeholder={`Enter ${header}`}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="form-actions">
+              <button className="cancel-btn" onClick={cancelCreateRow}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2"/>
+                </svg>
+                Cancel
+              </button>
+              <button className="save-btn" onClick={saveNewRow}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" stroke="currentColor" strokeWidth="2"/>
+                </svg>
+                Save
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="data-table">
           <table>
             <thead>
@@ -473,256 +534,109 @@ export default function AdvancedSettings({
                 {headers.map(header => (
                   <th key={header}>{header}</th>
                 ))}
+                <th className="actions-header">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {displayData.map((row, idx) => (
-                <tr key={idx}>
+              {data.map((row, idx) => (
+                <tr key={idx} className={editingRowIndex === idx ? 'editing-row' : ''}>
                   {headers.map(header => (
-                    <td key={header}>{row[header]}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  };
-
-  const renderPreview = () => {
-    if (!previewData || !validationResult) return null;
-
-    const { data, type } = previewData;
-    const { isValid, errors, warnings, validatedData } = validationResult;
-
-    return (
-      <div className="data-preview-container">
-        <div className="preview-header">
-          <h4>
-            📋 Data Preview - {type.charAt(0).toUpperCase() + type.slice(1)}
-          </h4>
-          <div className="preview-stats">
-            <div className="stat-item">
-              <span>📊</span>
-              <span>{data.length} rows</span>
-            </div>
-            <div className="stat-item">
-              <span>✅</span>
-              <span>{validatedData.length} valid</span>
-            </div>
-            {errors.length > 0 && (
-              <div className="stat-item">
-                <span>❌</span>
-                <span>{errors.length} errors</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className={`validation-status ${isValid ? 'validation-success' : 'validation-error'}`}>
-          <div className="validation-message">
-            <span>{isValid ? '✅' : '❌'}</span>
-            <span>
-              {isValid 
-                ? `Data validation passed! ${validatedData.length} records ready to save.` 
-                : `Data validation failed! Please fix the errors below.`
-              }
-            </span>
-          </div>
-          
-          {errors.length > 0 && (
-            <div className="validation-details">
-              <strong>Errors:</strong>
-              <ul>
-                {errors.map((error, index) => (
-                  <li key={index}>{error}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          
-          {warnings.length > 0 && (
-            <div className="validation-details">
-              <strong>Warnings:</strong>
-              <ul>
-                {warnings.map((warning, index) => (
-                  <li key={index}>{warning}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-
-        <div className="preview-table">
-          <table>
-            <thead>
-              <tr>
-                {data.length > 0 && Object.keys(data[0]).map(header => (
-                  <th key={header}>{header}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {data.slice(0, 20).map((row, idx) => (
-                <tr key={idx}>
-                  {Object.keys(row).map(header => (
-                    <td 
-                      key={header}
-                      className={
-                        errors.some(error => error.includes(`Row ${idx + 1}`) && error.includes(`'${header}'`))
-                          ? 'error-cell'
-                          : ''
-                      }
-                    >
-                      {row[header]}
+                    <td key={header}>
+                      {editingRowIndex === idx ? (
+                        // Edit mode
+                        schema.readOnly && schema.readOnly.includes(header) ? (
+                          <span className="readonly-field" title="Auto-generated - Read Only">{row[header]}</span>
+                        ) : schema.types[header] === 'number' ? (
+                          <input
+                            type="number"
+                            value={editingData[header] || ''}
+                            onChange={(e) => handleFieldChange(header, parseFloat(e.target.value) || 0)}
+                            className="edit-input number-input"
+                            step="0.01"
+                          />
+                        ) : schema.types[header] === 'boolean' ? (
+                          <select
+                            value={editingData[header] ? 'true' : 'false'}
+                            onChange={(e) => handleFieldChange(header, e.target.value === 'true')}
+                            className="edit-input"
+                          >
+                            <option value="true">Active</option>
+                            <option value="false">Inactive</option>
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            value={editingData[header] || ''}
+                            onChange={(e) => handleFieldChange(header, e.target.value)}
+                            className="edit-input"
+                          />
+                        )
+                      ) : (
+                        // View mode
+                        <span className="cell-value">
+                          {schema.types[header] === 'boolean' 
+                            ? (row[header] ? 'Active' : 'Inactive')
+                            : row[header]
+                          }
+                        </span>
+                      )}
                     </td>
                   ))}
+                  <td className="actions-cell">
+                    {editingRowIndex === idx ? (
+                      // Edit mode actions
+                      <div className="edit-actions">
+                        <button 
+                          className="action-btn cancel-edit-btn"
+                          onClick={cancelEdit}
+                          title="Cancel Edit"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                            <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2"/>
+                          </svg>
+                        </button>
+                        <button 
+                          className="action-btn save-edit-btn"
+                          onClick={saveEdit}
+                          title="Save Changes"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                            <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" stroke="currentColor" strokeWidth="2"/>
+                          </svg>
+                        </button>
+                      </div>
+                    ) : (
+                      // View mode actions
+                      <div className="view-actions">
+                        <button 
+                          className="action-btn edit-btn"
+                          onClick={() => startEdit(idx)}
+                          disabled={editingRowIndex !== null || showCreateRow}
+                          title="Edit Row"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" stroke="currentColor" strokeWidth="2"/>
+                            <path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="2"/>
+                          </svg>
+                        </button>
+                        <button 
+                          className="action-btn delete-btn"
+                          onClick={() => deleteRow(idx)}
+                          disabled={editingRowIndex !== null || showCreateRow}
+                          title="Delete Row"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                            <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" stroke="currentColor" strokeWidth="2"/>
+                          </svg>
+                        </button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {data.length > 20 && (
-            <div className="table-footer">
-              <p>Showing 20 of {data.length} rows</p>
-            </div>
-          )}
         </div>
-
-        <div className="preview-actions">
-          <div className="preview-actions-left">
-            <button className="preview-btn cancel-btn" onClick={cancelPreview}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2"/>
-              </svg>
-              Cancel
-            </button>
-          </div>
-          <div className="preview-actions-right">
-            <button 
-              className="preview-btn save-preview-btn"
-              onClick={handleSavePreview}
-              disabled={!isValid}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" stroke="currentColor" strokeWidth="2"/>
-                <polyline points="17,21 17,13 7,13 7,21" stroke="currentColor" strokeWidth="2"/>
-                <polyline points="7,3 7,8 15,8" stroke="currentColor" strokeWidth="2"/>
-              </svg>
-              Save to Database
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderUploadSection = () => {
-    const uploadCards = [
-      {
-        type: 'providers', 
-        title: 'Providers Data', 
-        description: 'Upload provider information and names',
-        fields: ['Provider ID', 'Provider Name', 'Status (Optional)']
-      },
-      {
-        type: 'states', 
-        title: 'State Charges', 
-        description: 'Upload per-kilo fees and fuel surcharges by state',
-        fields: ['Provider ID', 'State', 'Per Kilo Fee (INR)', 'Fuel Surcharge (%)']
-      },
-      {
-        type: 'fixed', 
-        title: 'Fixed Charges', 
-        description: 'Upload docket, COD, holiday, and outstation charges',
-        fields: ['Provider ID', 'Docket Charge (INR)', 'COD Charge (INR)', 'Holiday Charge (INR)', 'Outstation Charge (INR)']
-      }
-    ];
-
-    return (
-      <div className="upload-section">
-        <div className="upload-info-banner">
-          <div className="info-icon">ℹ️</div>
-          <div className="info-content">
-            <h4>Data Upload Instructions</h4>
-            <ul>
-              <li><strong>File Formats:</strong> CSV (recommended) or JSON files</li>
-              <li><strong>Validation:</strong> All data is validated before saving</li>
-              <li><strong>Preview:</strong> Review your data before it overwrites the database</li>
-              <li><strong>Required Fields:</strong> Download templates for exact column formats</li>
-              <li><strong>Data Override:</strong> Saving will replace ALL existing data</li>
-            </ul>
-          </div>
-        </div>
-
-        {previewData && renderPreview()}
-
-        {!previewData && (
-          <div className="upload-cards">
-            {uploadCards.map(({ type, title, description, fields }) => (
-              <div key={type} className="upload-card">
-                <div className="upload-card-header">
-                  <h4>{title}</h4>
-                  <p>{description}</p>
-                  <div className="required-fields">
-                    <strong>Required columns:</strong>
-                    <div className="field-tags">
-                      {fields.map(field => (
-                        <span key={field} className="field-tag">{field}</span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <div className="upload-card-actions">
-                  <div className="template-downloads">
-                    <button
-                      className="template-btn csv-btn"
-                      onClick={() => downloadSampleFile(type, 'csv')}
-                      title="Download CSV Template"
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="currentColor" strokeWidth="2"/>
-                        <polyline points="14,2 14,8 20,8" stroke="currentColor" strokeWidth="2"/>
-                      </svg>
-                      CSV Template
-                    </button>
-                    <button
-                      className="template-btn json-btn"
-                      onClick={() => downloadSampleFile(type, 'json')}
-                      title="Download JSON Template"
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="currentColor" strokeWidth="2"/>
-                        <polyline points="14,2 14,8 20,8" stroke="currentColor" strokeWidth="2"/>
-                      </svg>
-                      JSON Template
-                    </button>
-                  </div>
-                  <input
-                    type="file"
-                    accept=".csv,.json"
-                    onChange={(e) => handleFileUpload(e, type)}
-                    className="file-input"
-                    id={`upload-${type}`}
-                    disabled={isUploading}
-                  />
-                  <label htmlFor={`upload-${type}`} className={`upload-btn ${isUploading ? 'disabled' : ''}`}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke="currentColor" strokeWidth="2"/>
-                    </svg>
-                    {isUploading ? 'Processing...' : 'Upload File'}
-                  </label>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-        
-        {uploadStatus && (
-          <div className={`upload-status ${uploadStatus.includes('❌') ? 'error' : 'success'}`}>
-            {uploadStatus}
-          </div>
-        )}
       </div>
     );
   };
@@ -763,7 +677,158 @@ export default function AdvancedSettings({
     URL.revokeObjectURL(url);
   };
 
+  const downloadAllSamples = () => {
+    // Create sample files for download
+    const samples = {
+      providers: [
+        {
+          "Provider Name": "Express Logistics",
+          "description": "Fast nationwide delivery service",
+          "isActive": true
+        }
+      ],
+      states: [
+        {
+          "State": "Maharashtra", 
+          "Per Kilo Fee (INR)": 25.0,
+          "Fuel Surcharge (%)": 12
+        }
+      ],
+      fixed: [
+        {
+          "Docket Charge (INR)": 50,
+          "COD Charge (INR)": 45,
+          "Holiday Charge (INR)": 25,
+          "Outstation Charge (INR)": 40,
+          "Insurance Charge (%)": 2.5,
+          "NGT Green Tax (INR)": 10,
+          "Kerala North East Handling Charge (INR)": 15
+        }
+      ]
+    };
+
+    Object.entries(samples).forEach(([dataType, sampleData]) => {
+      const content = JSON.stringify(sampleData, null, 2);
+      const blob = new Blob([content], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `sample_${dataType}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+  };
+
+  const exportAllData = () => {
+    // Export all current data as separate files
+    ['providers', 'states', 'fixed'].forEach(dataType => {
+      exportCurrentData(dataType);
+    });
+  };
+
+  const reindexDatabase = async () => {
+    if (!window.confirm('⚠️ This will reindex and regenerate ALL database records with sequential IDs. This action cannot be undone. Are you sure you want to continue?')) {
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      setUploadStatus('🔄 Reindexing database... This may take a few moments...');
+
+      const response = await fetch(`${getAPIBaseURL()}/api/reindex`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      if (result.success) {
+        setUploadStatus(`✅ Database reindexed successfully! ${result.counts.providers} providers, ${result.counts.fixedCharges} fixed charges, ${result.counts.statewiseCharges} statewise charges`);
+        
+        // Trigger data refresh
+        setTimeout(() => {
+          window.location.reload(); // Simple way to refresh all data
+        }, 2000);
+      } else {
+        throw new Error(result.error || 'Failed to reindex database');
+      }
+
+    } catch (error) {
+      console.error('Reindex error:', error);
+      setUploadStatus(`❌ Error reindexing database: ${error.message}`);
+    } finally {
+      setIsUploading(false);
+      setTimeout(() => setUploadStatus(''), 5000);
+    }
+  };
+
   if (!isOpen) return null;
+
+  // Show password prompt if not verified
+  if (!isPasswordVerified) {
+    return (
+      <div className="advanced-settings-overlay">
+        <div className="password-modal">
+          <div className="password-header">
+            <h2>🔒 Advanced Settings Access</h2>
+            <p>Please enter the administrator password to continue</p>
+          </div>
+          
+          <form onSubmit={handlePasswordSubmit} className="password-form">
+            <div className="password-input-group">
+              <label htmlFor="admin-password">Administrator Password</label>
+              <input
+                id="admin-password"
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                placeholder="Enter password"
+                className="password-input"
+                autoFocus
+                required
+              />
+              {passwordError && (
+                <div className="password-error">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
+                    <line x1="15" y1="9" x2="9" y2="15" stroke="currentColor" strokeWidth="2"/>
+                    <line x1="9" y1="9" x2="15" y2="15" stroke="currentColor" strokeWidth="2"/>
+                  </svg>
+                  {passwordError}
+                </div>
+              )}
+            </div>
+            
+            <div className="password-actions">
+              <button
+                type="button"
+                className="password-cancel-btn"
+                onClick={handlePasswordClose}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="password-submit-btn"
+                disabled={!passwordInput.trim()}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3" stroke="currentColor" strokeWidth="2"/>
+                </svg>
+                Access Settings
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="advanced-settings-overlay">
@@ -787,17 +852,25 @@ export default function AdvancedSettings({
               </button>
               {dropdownOpen && (
                 <div className="dropdown-menu">
-                  <button onClick={() => downloadSampleFile('providers')}>
+                  <button onClick={downloadAllSamples}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                       <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="currentColor" strokeWidth="2"/>
                     </svg>
                     Download All Samples
                   </button>
-                  <button onClick={() => exportCurrentData('providers')}>
+                  <button onClick={exportAllData}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                       <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke="currentColor" strokeWidth="2"/>
                     </svg>
                     Export All Data
+                  </button>
+                  <div className="dropdown-divider"></div>
+                  <button onClick={reindexDatabase} className="reindex-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <path d="M1 4v6h6M23 20v-6h-6" stroke="currentColor" strokeWidth="2"/>
+                      <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" stroke="currentColor" strokeWidth="2"/>
+                    </svg>
+                    🔄 Reindex Database
                   </button>
                 </div>
               )}
@@ -812,59 +885,75 @@ export default function AdvancedSettings({
 
         <div className="modal-content">
           <div className="tabs-container">
+            
             <div className="tabs">
               {tabs.map(tab => (
                 <button
                   key={tab.id}
                   className={`tab ${activeTab === tab.id ? 'active' : ''}`}
                   onClick={() => setActiveTab(tab.id)}
+                  title={tab.description}
                 >
                   <span className="tab-icon">{tab.icon}</span>
-                  <span className="tab-label">{tab.label}</span>
+                  <div className="tab-content-wrapper">
+                    <span className="tab-label">{tab.label}</span>
+                    <span className="tab-description">{tab.description}</span>
+                  </div>
                 </button>
               ))}
             </div>
           </div>
 
           <div className="tab-content">
-            {activeTab === 'providers' && renderDataTable(providers, 'providers')}
-            {activeTab === 'states' && renderDataTable(states, 'states')}
-            {activeTab === 'fixed' && renderDataTable(fixedCharges, 'fixed')}
-            {activeTab === 'upload' && renderUploadSection()}
+            <div className="tab-content-header">
+              <div className="current-tab-info">
+                <span className="current-tab-icon">{tabs.find(t => t.id === activeTab)?.icon}</span>
+                <div>
+                  <h3 className="current-tab-title">{tabs.find(t => t.id === activeTab)?.label}</h3>
+                  <p className="current-tab-description">{tabs.find(t => t.id === activeTab)?.description}</p>
+                </div>
+              </div>
+              <div className="sync-status">
+                <span className="sync-indicator">🔄</span>
+                <span className="sync-text">Real-time database sync enabled</span>
+              </div>
+            </div>
+            
+            {activeTab === 'providers' && (
+              <div className="tab-section">
+                <div className="section-info">
+                  <p>Manage shipping service providers. Changes are synchronized with the database.</p>
+                </div>
+                {renderDataTable(providers, 'providers')}
+              </div>
+            )}
+            {activeTab === 'states' && (
+              <div className="tab-section">
+               
+                {renderDataTable(states, 'states')}
+              </div>
+            )}
+            {activeTab === 'fixed' && (
+              <div className="tab-section">
+                <div className="section-info">
+                  <p>Set fixed charges for shipments. These are applied per order.</p>
+                </div>
+                {renderDataTable(fixedCharges, 'fixed')}
+              </div>
+            )}
           </div>
+
+          {uploadStatus && (
+            <div className={`upload-status ${uploadStatus.includes('❌') ? 'error' : 'success'}`}>
+              {uploadStatus}
+            </div>
+          )}
         </div>
 
         {isUploading && (
           <div className="loading-overlay">
             <div className="spinner"></div>
-            <p>Processing file...</p>
-          </div>
-        )}
-
-        {showConfirmation && (
-          <div className="confirmation-dialog">
-            <div className="confirmation-content">
-              <div className="confirmation-icon">⚠️</div>
-              <h3 className="confirmation-title">Confirm Data Override</h3>
-              <p className="confirmation-message">
-                This action will completely replace the existing {previewData?.type} data with your uploaded data. 
-                This action cannot be undone. Are you sure you want to continue?
-              </p>
-              <div className="confirmation-actions">
-                <button 
-                  className="preview-btn cancel-btn"
-                  onClick={() => setShowConfirmation(false)}
-                >
-                  Cancel
-                </button>
-                <button 
-                  className="preview-btn confirm-btn"
-                  onClick={confirmSave}
-                >
-                  Yes, Override Data
-                </button>
-              </div>
-            </div>
+            <p>Processing...</p>
           </div>
         )}
       </div>

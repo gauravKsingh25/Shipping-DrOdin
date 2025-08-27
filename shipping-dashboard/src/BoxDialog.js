@@ -76,7 +76,7 @@ function BoxDialog({ open, onClose, onAdd, boxToDuplicate }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    
+
     if (!validateForm()) {
       return;
     }
